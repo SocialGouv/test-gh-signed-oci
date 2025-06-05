@@ -1,0 +1,47 @@
+name: Build-sign-push to GHCR
+
+# Run only when a human clicks “Run workflow” so the signer ≠ github-actions[bot]
+on:
+  workflow_dispatch:
+
+# OIDC token (for Sigstore) and package push both need explicit permission scopes
+permissions:
+  id-token: write     # <-- OIDC token for Cosign
+  packages: write     # <-- push to ghcr.io
+  contents: read
+
+jobs:
+  build-sign:
+    runs-on: ubuntu-latest
+
+    env:
+      REGISTRY: ghcr.io
+      IMAGE: ${{ github.repository }}   # e.g. org/repo
+      TAG: ${{ github.sha }}            # immutable tag = commit digest
+      COSIGN_EXPERIMENTAL: "1"          # enable key-less
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build the OCI image
+      - name: Build image
+        run: |
+          docker build -t $REGISTRY/$IMAGE:$TAG .
+
+      # Log in to GHCR with the token automatically provided by Actions
+      - name: Authenticate to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      # Push the (unsigned) image layer
+      - name: Push image layers
+        run: docker push $REGISTRY/$IMAGE:$TAG
+
+      # Install Cosign   (lightweight wrapper around `go install` release binary)
+      - uses: sigstore/cosign-installer@v3
+
+      # Key-less sign: Cosign grabs the OIDC token → Fulcio cert → Rekor log entry
+      - name: Sign image with caller identity
+        run: |
+          cosign sign --yes --keyless $REGISTRY/$IMAGE:$TAG
