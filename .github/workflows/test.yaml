@@ -1,48 +1,40 @@
-name: Build-sign-push to GHCR
-
-# Run only when a human clicks “Run workflow” so the signer ≠ github-actions[bot]
+name: build-and-sign
 on:
-  workflow_dispatch:
-  push:
+  workflow_dispatch:      # only manual runs → signer is a real user
 
-# OIDC token (for Sigstore) and package push both need explicit permission scopes
-permissions:
-  id-token: write     # <-- OIDC token for Cosign
-  packages: write     # <-- push to ghcr.io
+permissions:              # required scopes
+  id-token: write         # OIDC token for Cosign
+  packages: write         # push to ghcr.io
   contents: read
 
 jobs:
-  build-sign:
+  sign-image:
     runs-on: ubuntu-latest
-
     env:
       REGISTRY: ghcr.io
       IMAGE: socialgouv/${{ github.event.repository.name }}
-      TAG: ${{ github.sha }}            # immutable tag = commit digest
-      COSIGN_EXPERIMENTAL: "1"          # enable key-less
+      TAG:   ${{ github.sha }}             # immutable tag
 
     steps:
       - uses: actions/checkout@v4
 
-      # Build the OCI image
-      - name: Build image
-        run: |
-          docker build -t $REGISTRY/$IMAGE:$TAG .
+      # 1. Build the image --------------------------------------------------
+      - name: Build
+        run: docker build -t $REGISTRY/$IMAGE:$TAG .
 
-      # Log in to GHCR with the token automatically provided by Actions
-      - name: Authenticate to GHCR
+      # 2. Push the (unsigned) layers --------------------------------------
+      - name: Push layers
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
             docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker push $REGISTRY/$IMAGE:$TAG
 
-      # Push the (unsigned) image layer
-      - name: Push image layers
-        run: docker push $REGISTRY/$IMAGE:$TAG
-
-      # Install Cosign   (lightweight wrapper around `go install` release binary)
+      # 3. Install the latest Cosign v2 (pin if you need to) ---------------
       - uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.5.0'         # ← optional but explicit
 
-      # Key-less sign: Cosign grabs the OIDC token → Fulcio cert → Rekor log entry
-      - name: Sign image with caller identity
+      # 4. Key-less sign (no --keyless flag any more) ----------------------
+      - name: Sign with caller identity
         run: |
-          cosign sign --yes --keyless $REGISTRY/$IMAGE:$TAG
+          cosign sign --yes $REGISTRY/$IMAGE:$TAG
