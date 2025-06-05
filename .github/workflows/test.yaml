@@ -3,6 +3,7 @@ name: Build-sign-push to GHCR
 # Run only when a human clicks “Run workflow” so the signer ≠ github-actions[bot]
 on:
   workflow_dispatch:
+  push:
 
 # OIDC token (for Sigstore) and package push both need explicit permission scopes
 permissions:
@@ -16,7 +17,7 @@ jobs:
 
     env:
       REGISTRY: ghcr.io
-      IMAGE: ${{ github.repository }}   # e.g. org/repo
+      IMAGE: ${{ github.repository_owner }}/${{ github.event.repository.name }}
       TAG: ${{ github.sha }}            # immutable tag = commit digest
       COSIGN_EXPERIMENTAL: "1"          # enable key-less
 
