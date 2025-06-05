@@ -17,7 +17,7 @@ jobs:
 
     env:
       REGISTRY: ghcr.io
-      IMAGE: ${{ github.repository_owner }}/${{ github.event.repository.name }}
+      IMAGE: socialgouv/${{ github.event.repository.name }}
       TAG: ${{ github.sha }}            # immutable tag = commit digest
       COSIGN_EXPERIMENTAL: "1"          # enable key-less
 
